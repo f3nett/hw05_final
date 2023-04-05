@@ -4,13 +4,13 @@ import tempfile
 
 from django import forms
 from django.conf import settings
+from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
-from django.core.files.uploadedfile import SimpleUploadedFile
 
 from ..forms import PostForm
 from ..models import Group, Post, User
-
 
 GROUP_POST_COUNT = 12
 PROFILE_POST_COUNT = 13
@@ -100,6 +100,7 @@ class PostPagesTests(TestCase):
     def setUp(self):
         self.authorized_client = Client()
         self.authorized_client.force_login(self.user)
+        cache.clear()
 
     def test_pages_uses_correct_template(self):
         """URL-адрес использует соответствующий шаблон."""
@@ -275,3 +276,22 @@ class PostPagesTests(TestCase):
                     posts,
                     f'Новый пост не появился на {url}'
                 )
+
+    def test_cashe(self):
+        """Кеширование на странице index работает корректно."""
+        start_content = self.authorized_client.get(
+            reverse('posts:index')
+        ).content
+        Post.objects.create(
+            author=self.user,
+            text=self.new_post_text,
+        )
+        content_after_add_post = self.authorized_client.get(
+            reverse('posts:index')
+        ).content
+        cache.clear()
+        content_after_cache_clear = self.authorized_client.get(
+            reverse('posts:index')
+        ).content
+        self.assertEqual(start_content, content_after_add_post)
+        self.assertNotEqual(start_content, content_after_cache_clear)
