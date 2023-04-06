@@ -10,7 +10,7 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from ..forms import PostForm
-from ..models import Group, Post, User
+from ..models import Group, Post, User, Follow
 
 GROUP_POST_COUNT = 12
 PROFILE_POST_COUNT = 13
@@ -22,7 +22,9 @@ class PostPagesTests(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.user = User.objects.create_user(username='HasNoName')
+        cls.user = User.objects.create_user(username='HasNoName1')
+        cls.not_follower_user = User.objects.create_user(username='HasNoName2')
+        cls.author = User.objects.create_user(username='Author')
         cls.group_1 = Group.objects.create(
             title='Тестовая группа 1',
             slug='test_slug_1',
@@ -100,6 +102,10 @@ class PostPagesTests(TestCase):
     def setUp(self):
         self.authorized_client = Client()
         self.authorized_client.force_login(self.user)
+        self.authorized_client_2 = Client()
+        self.authorized_client_2.force_login(self.not_follower_user)
+        self.authorized_author = Client()
+        self.authorized_author.force_login(self.author)
         cache.clear()
 
     def test_pages_uses_correct_template(self):
@@ -110,7 +116,7 @@ class PostPagesTests(TestCase):
                 self.assertTemplateUsed(
                     response,
                     template,
-                    'Несоответствие адреса и html шаблона'
+                    'Адрес не соответствует html шаблону'
                 )
 
     def test_paginator_returns(self):
@@ -128,12 +134,14 @@ class PostPagesTests(TestCase):
                     if page == paginator_page_count:
                         self.assertEqual(
                             len(response.context['page_obj']),
-                            url_posts_count % settings.POSTS_COUNT
+                            url_posts_count % settings.POSTS_COUNT,
+                            'Пагинатор возвращает не верное количество постов'
                         )
                     else:
                         self.assertEqual(
                             len(response.context['page_obj']),
-                            settings.POSTS_COUNT
+                            settings.POSTS_COUNT,
+                            'Пагинатор возвращает не верное количество постов'
                         )
                     page += 1
 
@@ -253,7 +261,7 @@ class PostPagesTests(TestCase):
                 self.assertIsInstance(
                     form_field,
                     expected,
-                    'В форму переданы поля с неправильным типом данных'
+                    'В форму передано поле с неправильным типом данных'
                 )
 
     def test_create_post_relations(self):
@@ -293,5 +301,81 @@ class PostPagesTests(TestCase):
         content_after_cache_clear = self.authorized_client.get(
             reverse('posts:index')
         ).content
-        self.assertEqual(start_content, content_after_add_post)
-        self.assertNotEqual(start_content, content_after_cache_clear)
+        self.assertEqual(
+            start_content,
+            content_after_add_post,
+            'Отсутствует кеширование страницы'
+        )
+        self.assertNotEqual(
+            start_content,
+            content_after_cache_clear,
+            'Кеширование страницы работает некорректно'
+        )
+
+    def test_follow_to_author(self):
+        """Авторизованный пользователь может подписываться на
+        других пользователей и удалять их из подписок."""
+        before_follow = Follow.objects.filter(
+            user=self.user,
+            author=self.author
+        ).count()
+        self.authorized_client.post(reverse(
+            'posts:profile_follow',
+            kwargs={'username': self.author.username}
+        ))
+        after_follow = Follow.objects.filter(
+            user=self.user,
+            author=self.author
+        ).count()
+        self.assertEqual(
+            after_follow,
+            before_follow + 1,
+            'Подписка авторизованного пользователя на автора не работает'
+        )
+        self.authorized_client.post(reverse(
+            'posts:profile_unfollow',
+            kwargs={'username': self.author.username}
+        ))
+        after_unfollow = Follow.objects.filter(
+            user=self.user,
+            author=self.author
+        ).count()
+        self.assertEqual(
+            after_unfollow,
+            after_follow - 1,
+            'Отписка авторизованного пользователя от автора не работает'
+        )
+
+    def test_view_followings(self):
+        """Новая запись пользователя появляется в ленте тех, кто на
+        него подписан, и не появляется в ленте тех, кто не подписан."""
+        self.authorized_client.post(reverse(
+            'posts:profile_follow',
+            kwargs={'username': self.author.username}
+        ))
+        new_post = {
+            'text': self.new_post_text,
+            'group': self.group_2.pk
+        }
+        self.authorized_author.post(
+            reverse('posts:post_create'),
+            data=new_post
+        )
+        follower_response = self.authorized_client.get(
+            reverse('posts:follow_index')
+        )
+        posts_for_follower = follower_response.context['page_obj']
+        self.assertIn(
+            Post.objects.latest('id'),
+            posts_for_follower,
+            'Новый пост автора не появляется в ленте подписчика'
+        )
+        not_follower_response = self.authorized_client_2.get(
+            reverse('posts:follow_index')
+        )
+        posts_for_not_follower = not_follower_response.context['page_obj']
+        self.assertNotIn(
+            Post.objects.latest('id'),
+            posts_for_not_follower,
+            'Новый пост автора появляется в ленте не подписанного пользователя'
+        )

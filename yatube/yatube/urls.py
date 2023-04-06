@@ -12,7 +12,7 @@ urlpatterns = [
 ]
 
 handler404 = 'core.views.page_not_found'
-handler403 = 'general.views.handler403.handler403'
+handler403 = 'core.views.permission_denied'
 
 if settings.DEBUG:
     urlpatterns += static(

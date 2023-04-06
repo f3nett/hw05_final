@@ -35,18 +35,15 @@ class PostsURLTests(TestCase):
             reverse('users:login') + f'?next=/posts/{cls.post.pk}/comment/',
             f'/profile/{cls.author_user.username}/follow/':
             reverse('users:login')
-            + f'?next=/profile/{cls.author_user.username}/follow/'
+            + f'?next=/profile/{cls.author_user.username}/follow/',
+            '/follow/': reverse('users:login') + '?next=/follow/',
         }
         cls.private_urls_for_user = {
             '/create/': False,
+            '/follow/': False,
             f'/posts/{cls.post.pk}/edit/': reverse(
                 'posts:post_detail', kwargs={'post_id': cls.post.pk}
             ),
-            # f'/profile/{cls.another_user.username}/follow/':
-            # reverse(
-            #     'posts:profile',
-            #     kwargs={'username': cls.another_user.username}
-            # ),
         }
         cls.unexisting_page_url = '/unexisting_page/'
 

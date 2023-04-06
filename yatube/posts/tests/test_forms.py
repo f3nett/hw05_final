@@ -64,17 +64,24 @@ class PostModelTest(TestCase):
             data=form_data,
             follow=True
         )
-        self.assertRedirects(response, reverse(
-            'posts:profile',
-            kwargs={'username': self.user.username})
+        self.assertRedirects(
+            response, reverse(
+                'posts:profile',
+                kwargs={'username': self.user.username}
+            )
         )
-        self.assertEqual(Post.objects.count(), posts_count + 1)
+        self.assertEqual(
+            Post.objects.count(),
+            posts_count + 1,
+            'После создания нового поста количество постов в БД не увеличилось'
+        )
         self.assertTrue(
             Post.objects.filter(
                 author=self.user,
                 text=self.new_post_text,
                 image=self.posts_image_folder + uploaded.name
-            ).exists()
+            ).exists(),
+            'Созданный пост не найден в БД'
         )
 
     def test_edit_post(self):
@@ -98,10 +105,15 @@ class PostModelTest(TestCase):
             kwargs={'post_id': self.post.pk}
         ))
         self.post.refresh_from_db()
-        self.assertEqual(self.post.text, self.change_post_text)
+        self.assertEqual(
+            self.post.text,
+            self.change_post_text,
+            'Текст поста не изменился'
+        )
         self.assertEqual(
             self.post.image,
-            self.posts_image_folder + uploaded.name
+            self.posts_image_folder + uploaded.name,
+            'Картинка к посту не добавлена'
         )
 
     def test_add_comment_by_auth_client(self):
@@ -119,13 +131,18 @@ class PostModelTest(TestCase):
             'posts:post_detail',
             kwargs={'post_id': self.post.pk}
         ))
-        self.assertEqual(Comment.objects.count(), comments_count + 1)
+        self.assertEqual(
+            Comment.objects.count(),
+            comments_count + 1,
+            'После добавления комментария их количество не увеличилось'
+        )
         self.assertTrue(
             Comment.objects.filter(
                 post=self.post.pk,
                 text=new_comment_data['text'],
                 author=self.user,
-            ).exists()
+            ).exists(),
+            'Добавленный комментарий не найден'
         )
 
     def test_post_form_label(self):
