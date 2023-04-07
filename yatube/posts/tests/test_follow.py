@@ -24,7 +24,7 @@ class FollowTests(TestCase):
         Follow.objects.all().delete()
 
     def test_follow_author(self):
-        """Авторизованный пользователь может подписываться на автора."""
+        """Пользователь может подписываться на автора."""
         before_follow = Follow.objects.filter(
             user=self.follower,
             author=self.author
@@ -44,7 +44,7 @@ class FollowTests(TestCase):
         )
 
     def test_unfollow_author(self):
-        """Авторизованный пользователь может отписаться от автора."""
+        """Пользователь может отписаться от автора."""
         self.follower_client.post(reverse(
             'posts:profile_follow',
             kwargs={'username': self.author.username}
