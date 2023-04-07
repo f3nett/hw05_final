@@ -16,7 +16,7 @@ def permission_denied(request, exception):
     return render(
         request,
         'core/403.html',
-        status=HTTPStatus.FOUND
+        status=HTTPStatus.FORBIDDEN
     )
 
 
