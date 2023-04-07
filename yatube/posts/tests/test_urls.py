@@ -5,6 +5,16 @@ from django.urls import reverse
 
 from ..models import Group, Post, User
 
+INDEX_URL = '/'
+GROUP_URL = '/group/{group_slug}/'
+PROFILE_URL = '/profile/{username}/'
+POST_DETAIL_URL = '/posts/{post_id}/'
+POST_EDIT_URL = '/posts/{post_id}/edit/'
+POST_CREATE_URL = '/create/'
+POST_COMMENT_URL = '/posts/{post_id}/comment/'
+FOLLOW_POSTS_URL = '/follow/'
+FOLLOW_URL = '/profile/{username}/follow/'
+
 
 class PostsURLTests(TestCase):
     @classmethod
@@ -22,26 +32,31 @@ class PostsURLTests(TestCase):
             text='Пост для тестирования',
         )
         cls.puplic_urls = [
-            '/',
-            f'/group/{cls.group.slug}/',
-            f'/profile/{cls.author_user.username}/',
-            f'/posts/{cls.post.pk}/',
+            INDEX_URL,
+            GROUP_URL.format(group_slug=cls.group.slug),
+            PROFILE_URL.format(username=cls.author_user.username),
+            POST_DETAIL_URL.format(post_id=cls.post.pk),
         ]
         cls.private_urls_for_guest = {
-            '/create/': reverse('users:login') + '?next=/create/',
-            f'/posts/{cls.post.pk}/edit/':
-            reverse('users:login') + f'?next=/posts/{cls.post.pk}/edit/',
-            f'/posts/{cls.post.pk}/comment/':
-            reverse('users:login') + f'?next=/posts/{cls.post.pk}/comment/',
-            f'/profile/{cls.author_user.username}/follow/':
-            reverse('users:login')
-            + f'?next=/profile/{cls.author_user.username}/follow/',
-            '/follow/': reverse('users:login') + '?next=/follow/',
+            POST_CREATE_URL,
+            POST_EDIT_URL.format(post_id=cls.post.pk),
+            POST_COMMENT_URL.format(post_id=cls.post.pk),
+            FOLLOW_URL.format(username=cls.author_user.username),
+            FOLLOW_POSTS_URL,
         }
         cls.private_urls_for_user = {
-            '/create/': False,
-            '/follow/': False,
-            f'/posts/{cls.post.pk}/edit/': reverse(
+            POST_CREATE_URL: False,
+            POST_EDIT_URL.format(post_id=cls.post.pk): False,
+            POST_COMMENT_URL.format(post_id=cls.post.pk): reverse(
+                'posts:post_detail', kwargs={'post_id': cls.post.pk}
+            ),
+            FOLLOW_URL.format(username=cls.author_user.username): reverse(
+                'posts:profile', kwargs={'username': cls.author_user.username}
+            ),
+            FOLLOW_POSTS_URL: False,
+        }
+        cls.private_urls_for_author = {
+            POST_EDIT_URL.format(post_id=cls.post.pk): reverse(
                 'posts:post_detail', kwargs={'post_id': cls.post.pk}
             ),
         }
@@ -63,10 +78,11 @@ class PostsURLTests(TestCase):
 
     def test_url_for_guest_user_denied(self):
         """Приватные страницы не доступны гостевому пользователю."""
-        for address, redirect_url in self.private_urls_for_guest.items():
+        for address in self.private_urls_for_guest:
             with self.subTest(address=address):
                 response = self.guest_client.get(address)
                 self.assertEqual(response.status_code, HTTPStatus.FOUND)
+                redirect_url = reverse('users:login') + '?next=' + address
                 self.assertRedirects(response, redirect_url)
 
     def test_url_for_auth_user_access(self):
@@ -74,17 +90,20 @@ class PostsURLTests(TestCase):
         for address, redirect_url in self.private_urls_for_user.items():
             with self.subTest(address=address):
                 response = self.author_authorized_client.get(address)
-                self.assertEqual(response.status_code, HTTPStatus.OK)
+                if redirect_url is False:
+                    self.assertEqual(response.status_code, HTTPStatus.OK)
+                else:
+                    self.assertEqual(response.status_code, HTTPStatus.FOUND)
+                    self.assertRedirects(response, redirect_url)
 
     def test_url_for_non_author(self):
         """Приватные страницы не доступны для пользователя,
         не являющегося автором"""
-        for address, redirect_url in self.private_urls_for_user.items():
-            if redirect_url:
-                with self.subTest(address=address):
-                    response = self.another_authorized_client.get(address)
-                    self.assertEqual(response.status_code, HTTPStatus.FOUND)
-                    self.assertRedirects(response, redirect_url)
+        for address, redirect_url in self.private_urls_for_author.items():
+            with self.subTest(address=address):
+                response = self.another_authorized_client.get(address)
+                self.assertEqual(response.status_code, HTTPStatus.FOUND)
+                self.assertRedirects(response, redirect_url)
 
     def test_url_for_unexisting_page(self):
         """Запрос к несуществующей странице."""

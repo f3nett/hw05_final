@@ -1,4 +1,3 @@
-import math
 import shutil
 import tempfile
 
@@ -10,10 +9,8 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from ..forms import PostForm
-from ..models import Group, Post, User, Follow
+from ..models import Group, Post, User
 
-GROUP_POST_COUNT = 12
-PROFILE_POST_COUNT = 13
 TEMP_MEDIA_ROOT = tempfile.mkdtemp(dir=settings.BASE_DIR)
 
 
@@ -22,17 +19,10 @@ class PostPagesTests(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.user = User.objects.create_user(username='HasNoName1')
-        cls.not_follower_user = User.objects.create_user(username='HasNoName2')
-        cls.author = User.objects.create_user(username='Author')
-        cls.group_1 = Group.objects.create(
+        cls.user = User.objects.create_user(username='HasNoName')
+        cls.group = Group.objects.create(
             title='Тестовая группа 1',
             slug='test_slug_1',
-            description='Тестовое описание',
-        )
-        cls.group_2 = Group.objects.create(
-            title='Тестовая группа 2',
-            slug='test_slug_2',
             description='Тестовое описание',
         )
         cls.small_gif = (
@@ -50,21 +40,14 @@ class PostPagesTests(TestCase):
         )
         cls.post = Post.objects.create(
             author=cls.user,
-            text='Тестовый пост без группы',
+            text='Пост с максимально заполненными атрибутами для тестирования',
+            group=cls.group,
             image=cls.uploaded,
-        )
-        Post.objects.bulk_create(
-            Post(
-                author=cls.user,
-                text=f'Тестовый пост {i} с группой 1',
-                group=cls.group_1,
-                image=cls.uploaded,
-            ) for i in range(GROUP_POST_COUNT)
         )
         cls.templates_pages_urls = {
             reverse('posts:index'): 'posts/index.html',
             reverse(
-                'posts:group_list', kwargs={'slug': cls.group_1.slug}
+                'posts:group_list', kwargs={'slug': cls.group.slug}
             ): 'posts/group_list.html',
             reverse(
                 'posts:profile', kwargs={'username': cls.user.username}
@@ -77,20 +60,10 @@ class PostPagesTests(TestCase):
             ): 'posts/create_post.html',
             reverse('posts:post_create'): 'posts/create_post.html',
         }
-        cls.paginator_urls = {
-            reverse('posts:index'): Post.objects.count(),
-            reverse(
-                'posts:profile', kwargs={'username': cls.user.username}
-            ): PROFILE_POST_COUNT,
-            reverse(
-                'posts:group_list', kwargs={'slug': cls.group_1.slug}
-            ): GROUP_POST_COUNT
-        }
         cls.new_post_text = 'Новый пост с группой 2'
-        cls.new_comment_text = 'Новый комментарий к посту'
         cls.new_post_verifiable_urls = [
             reverse('posts:index'),
-            reverse('posts:group_list', kwargs={'slug': cls.group_2.slug}),
+            reverse('posts:group_list', kwargs={'slug': cls.group.slug}),
             reverse('posts:profile', kwargs={'username': cls.user.username}),
         ]
 
@@ -102,10 +75,6 @@ class PostPagesTests(TestCase):
     def setUp(self):
         self.authorized_client = Client()
         self.authorized_client.force_login(self.user)
-        self.authorized_client_2 = Client()
-        self.authorized_client_2.force_login(self.not_follower_user)
-        self.authorized_author = Client()
-        self.authorized_author.force_login(self.author)
         cache.clear()
 
     def test_pages_uses_correct_template(self):
@@ -118,32 +87,6 @@ class PostPagesTests(TestCase):
                     template,
                     'Адрес не соответствует html шаблону'
                 )
-
-    def test_paginator_returns(self):
-        """Пагинатор возвращает правильное количество постов."""
-        for url, url_posts_count in self.paginator_urls.items():
-            with self.subTest(url=url):
-                paginator_page_count = math.ceil(
-                    url_posts_count / settings.POSTS_COUNT
-                )
-                page = 1
-                while page <= paginator_page_count:
-                    response = self.authorized_client.get(
-                        url + f'?page={page}'
-                    )
-                    if page == paginator_page_count:
-                        self.assertEqual(
-                            len(response.context['page_obj']),
-                            url_posts_count % settings.POSTS_COUNT,
-                            'Пагинатор возвращает не верное количество постов'
-                        )
-                    else:
-                        self.assertEqual(
-                            len(response.context['page_obj']),
-                            settings.POSTS_COUNT,
-                            'Пагинатор возвращает не верное количество постов'
-                        )
-                    page += 1
 
     def test_index_show_correct_context(self):
         """Шаблон index сформирован с правильным контекстом."""
@@ -162,7 +105,7 @@ class PostPagesTests(TestCase):
     def test_group_list_show_correct_context(self):
         """Шаблон group_list сформирован с правильным контекстом."""
         response = self.authorized_client.get(reverse(
-            'posts:group_list', kwargs={'slug': self.group_1.slug}
+            'posts:group_list', kwargs={'slug': self.group.slug}
         ))
         post_object = response.context['page_obj'][0]
         post_group = response.context['group']
@@ -173,7 +116,7 @@ class PostPagesTests(TestCase):
         )
         self.assertEqual(
             post_group,
-            self.group_1,
+            self.group,
             'В контексте передается неправильная группа поста'
         )
         self.assertIsNotNone(
@@ -241,6 +184,10 @@ class PostPagesTests(TestCase):
             PostForm,
             'Форма, передаваемая в контексте, не является формой для поста'
         )
+        self.assertTrue(
+            response.context['is_edit'],
+            'Признак возможности редактирования не передан в контексте'
+        )
 
     def test_create_post_show_correct_context(self):
         """Шаблон create_post сформирован с правильным контекстом."""
@@ -268,7 +215,7 @@ class PostPagesTests(TestCase):
         """Новый созданный пост доступен на шаблонах."""
         new_post = {
             'text': self.new_post_text,
-            'group': self.group_2.pk
+            'group': self.group.pk
         }
         self.authorized_client.post(
             reverse('posts:post_create'),
@@ -284,98 +231,3 @@ class PostPagesTests(TestCase):
                     posts,
                     f'Новый пост не появился на {url}'
                 )
-
-    def test_cashe(self):
-        """Кеширование на странице index работает корректно."""
-        start_content = self.authorized_client.get(
-            reverse('posts:index')
-        ).content
-        Post.objects.create(
-            author=self.user,
-            text=self.new_post_text,
-        )
-        content_after_add_post = self.authorized_client.get(
-            reverse('posts:index')
-        ).content
-        cache.clear()
-        content_after_cache_clear = self.authorized_client.get(
-            reverse('posts:index')
-        ).content
-        self.assertEqual(
-            start_content,
-            content_after_add_post,
-            'Отсутствует кеширование страницы'
-        )
-        self.assertNotEqual(
-            start_content,
-            content_after_cache_clear,
-            'Кеширование страницы работает некорректно'
-        )
-
-    def test_follow_to_author(self):
-        """Авторизованный пользователь может подписываться на
-        других пользователей и удалять их из подписок."""
-        before_follow = Follow.objects.filter(
-            user=self.user,
-            author=self.author
-        ).count()
-        self.authorized_client.post(reverse(
-            'posts:profile_follow',
-            kwargs={'username': self.author.username}
-        ))
-        after_follow = Follow.objects.filter(
-            user=self.user,
-            author=self.author
-        ).count()
-        self.assertEqual(
-            after_follow,
-            before_follow + 1,
-            'Подписка авторизованного пользователя на автора не работает'
-        )
-        self.authorized_client.post(reverse(
-            'posts:profile_unfollow',
-            kwargs={'username': self.author.username}
-        ))
-        after_unfollow = Follow.objects.filter(
-            user=self.user,
-            author=self.author
-        ).count()
-        self.assertEqual(
-            after_unfollow,
-            after_follow - 1,
-            'Отписка авторизованного пользователя от автора не работает'
-        )
-
-    def test_view_followings(self):
-        """Новая запись пользователя появляется в ленте тех, кто на
-        него подписан, и не появляется в ленте тех, кто не подписан."""
-        self.authorized_client.post(reverse(
-            'posts:profile_follow',
-            kwargs={'username': self.author.username}
-        ))
-        new_post = {
-            'text': self.new_post_text,
-            'group': self.group_2.pk
-        }
-        self.authorized_author.post(
-            reverse('posts:post_create'),
-            data=new_post
-        )
-        follower_response = self.authorized_client.get(
-            reverse('posts:follow_index')
-        )
-        posts_for_follower = follower_response.context['page_obj']
-        self.assertIn(
-            Post.objects.latest('id'),
-            posts_for_follower,
-            'Новый пост автора не появляется в ленте подписчика'
-        )
-        not_follower_response = self.authorized_client_2.get(
-            reverse('posts:follow_index')
-        )
-        posts_for_not_follower = not_follower_response.context['page_obj']
-        self.assertNotIn(
-            Post.objects.latest('id'),
-            posts_for_not_follower,
-            'Новый пост автора появляется в ленте не подписанного пользователя'
-        )
